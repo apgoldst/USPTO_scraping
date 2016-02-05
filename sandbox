@@ -1,0 +1,6 @@
+import save_tables
+
+# csv_file = "DOE grant long list.csv"
+#
+# save_tables.print_patent_table(csv_file)
+# save_tables.print_grant_table(csv_file)

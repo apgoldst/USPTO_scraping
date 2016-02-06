@@ -7,88 +7,152 @@ import manual_search
 from bs4 import BeautifulSoup
 
 
+def interpret_search(soup, num_patents, type):
+
+    # Output a list of patent dictionaries from a soup document of USPTO search results
+    # Results containing patent number and title are in the second table on the page
+    results = soup.find_all('table')[1]
+    patent_list = []
+    table = [str(a.contents[0]) for a in results.find_all('a')]
+
+    for i in range(num_patents):
+
+        # Create patent dictionary
+        patent = {"Patent Number": "",
+                  "Patent Title": "",
+                  "Date": ""}
+
+        # Store patent number from even numbered <a> tags
+        pat_num = table[2*i]
+        pat_num = pat_num.replace(",", "")
+        patent["Patent Number"] = pat_num
+        print str(pat_num) + " " + type + " patent"
+
+        # Store patent title from odd numbered <a> tags
+        pat_title = table[(2*i)+1].replace("\n", "").replace("    ", "")
+        patent["Patent Title"] = pat_title
+
+        pat_file = manual_search.pn_search(pat_num, type)
+
+        # Open file with patent data for each patent
+        with open(pat_file) as c:
+            pat_soup = BeautifulSoup(c, "lxml")
+
+        [date, num_claims] = get_date_claims(pat_soup)
+
+        patent["Date"] = date
+        patent["Number of Claims"] = num_claims
+
+        patent_list.append(patent)
+
+    return patent_list
+
+
+def get_date_claims(soup):
+
+    # Add patent date to dictionary from fifth bold tag
+    date = soup.find_all('b')[4].contents[0]
+    date = str(date).replace("\n", "").replace("     ", "")
+
+    # Add number of claims to dictionary
+    description = soup.find("center", string="Description")
+    final_claim = description.previous_sibling.previous_sibling.previous_sibling
+    final_claim = final_claim[1:4].replace(".", "").replace(" ", "")
+
+    if final_claim != "":
+        num_claims = int(final_claim)
+    else:
+        num_claims = 1
+
+    return [date, num_claims]
+
+
 # Input a list of grant numbers and get out a list of dictionaries containing the
 # patenting metrics
 def process_grants(grant_list):
-    grants = manual_search.run_search(grant_list)
-    # data = [{"grant number": grants[i][0:2] + grants[i][3:],
-    #          "number of patents": 0} for i in range(len(grants))]
-    data = [{"grant number": grants[i], "number of patents": 0} for i in range(len(grants))]
 
-    counter = 0
-    for grant in grants:
+    [grants, files] = manual_search.run_search(grant_list)
+    data = [{"Award Number": grants[y],
+             "Number of Patents": 0,
+             "Avg. Number of Claims": "",
+             "__patent list": []} for y in range(len(grants))]
+
+    for counter, grant in enumerate(grants):
 
         # Open file with search results for each grant
-        grant_file = "grant search results - full html/" + grant + ".html"
-        with open(grant_file) as f:
+        filename = files[counter]
+        with open(filename) as f:
             soup = BeautifulSoup(f, "lxml")
 
-            # Number of search results printed in bold
-            # If no bold text, that means no patents citing that grant
-            if soup.strong:
-                num_patents = int(soup.find_all('strong')[2].contents[0])
-                data[counter]["number of patents"] = num_patents
+        patent_list = []
 
-                # Results containing patent number and title are in the second table on the page
-                results = soup.find_all('table')[1]
-                grant_pats = []
-                pat_nums = []
-                pat_titles = []
+        # Number of search results printed in bold
+        # If no bold text, that means no patents citing that grant
+        if soup.strong:
+            num_patents = int(soup.find_all('strong')[2].contents[0])
+            if num_patents > 50:
+                raise Exception
+            data[counter]["Number of Patents"] = num_patents
 
-                for i in range(num_patents):
+            patent_list = interpret_search(soup, num_patents, "DOE")
 
-                    # Create patent dictionary
-                    grant_pats.append({})
-                    grant_pats[i] = {"patent number": "",
-                                     "patent title": "",
-                                     "date": "",
-                                     "number of claims": "",
-                                     "cites": [],
-                                     "cited by": []}
+            # For each grant, set the value of the "patent list" key
+            # as a list of patent dictionaries
+            data[counter]["__patent list"] = patent_list
 
-                    # Store patent number from even numbered <a> tags
-                    a = results.find_all('a')[2*i]
-                    pat_nums += a
-                    pat_num = str(pat_nums[i])
-                    grant_pats[i]["patent number"] = pat_num
+            for patent in patent_list:
+                pat_num = patent["Patent Number"]
+                patent["Citing Patents"] = 0
+                patent["__citing patent list"] = []
+                ref_file = manual_search.ref_search(pat_num)
 
-                    # Store patent title from odd numbered <a> tags
-                    a = results.find_all('a')[(2*i)+1]
-                    pat_titles += a
-                    pat_title = str(pat_titles[i]).replace("\n", "").replace("    ", "")
-                    grant_pats[i]["patent title"] = pat_title
+                with open(ref_file) as d:
+                    ref_soup = BeautifulSoup(d, "lxml")
 
-                    pat_num_clean = pat_num.replace(",", "")
-                    manual_search.pn_search(pat_num_clean)
+                # Are there any results for "referenced by"?
+                if ref_soup.strong:
 
-                    # Open file with patent data for each patent
-                    pat_file = "patent pages - full html/" + pat_num_clean + ".html"
-                    with open(pat_file) as c:
-                        extra_soup = BeautifulSoup(c, "lxml")
+                    # Is there only one search result, so the page redirects?
+                    if ref_soup.find('title').contents == "Single Document":
+                        patent["Citing Patents"] = 1
 
-                        # Add patent date to dictionary from fifth bold tag
-                        date = extra_soup.find_all('b')[4].contents[0]
-                        date = str(date).replace("\n", "").replace("     ", "")
-                        grant_pats[i]["date"] = date
+                        ref_file_2 = manual_search.ref_search_1(pat_num)
 
-                        # Add number of claims to dictionary
-                        description = extra_soup.find("center", string="Description")
-                        final_claim = description.previous_sibling.previous_sibling.previous_sibling
-                        num_claims = int(final_claim[1:4].replace(".", "").replace(" ", ""))
-                        grant_pats[i]["number of claims"] = num_claims
+                        with open(ref_file_2) as e:
+                            ref_soup = BeautifulSoup(e, "lxml")
 
-                # For each grant, set the value of the "patent list" key
-                # as a list of patent dictionaries
-                data[counter]["patent list"] = grant_pats
+                        title = ref_soup.find("font", size="+1")
+                        number = ref_soup.title.contents[0][22:]
 
-                total_claims = sum(x["number of claims"] for x in data[counter]["patent list"])
-                avg_claims = total_claims / float(num_patents)
-                data[counter]["avg number of claims"] = avg_claims
-        counter += 1
+                        [date, num_claims] = get_date_claims(ref_soup)
+
+                        citing_pat = {"Patent Title": title,
+                                      "Patent Number": number,
+                                      "Date": date,
+                                      "Number of Claims": num_claims}
+
+                        patent["__citing patent list"].append(citing_pat)
+
+                    else:
+                        num_citing_patents = int(ref_soup.find_all('strong')[2].contents[0])
+                        patent["Citing Patents"] = num_citing_patents
+
+                        up_to_50 = min(50, num_citing_patents)
+
+                        patent["__citing patent list"] = interpret_search(ref_soup, up_to_50, "citing")
+
+                        if num_citing_patents > 50:
+                            past_50 = num_citing_patents - 50
+                            patent["__citing patent list"] += interpret_search(ref_soup, past_50, "citing")
+
+            total_claims = sum(x["Number of Claims"] for x in data[counter]["__patent list"])
+            avg_claims = total_claims / float(num_patents)
+            data[counter]["Avg. Number of Claims"] = avg_claims
+
     return data
 
 
 csv_file = "DOE grant short list.csv"
 
 if __name__ == '__main__':
-    pprint.pprint(process_grants(csv_file)[:10])
+    process_grants(csv_file)

@@ -1,4 +1,21 @@
 import save_tables
+import manual_search
+from bs4 import BeautifulSoup
+
+pat_num = "8408445"
+ref_file_2 = manual_search.ref_search_1(pat_num)
+
+with open(ref_file_2) as e:
+    ref_soup = BeautifulSoup(e, "lxml")
+
+# query = "8047593_2"
+# filename = "reference search results - full html/" + query + ".html"
+# with open(filename) as e:
+#     ref_soup = BeautifulSoup(e, "lxml")
+#
+# pat_title = ref_soup.find("font", size="+1")
+# print pat_title
+# print ref_soup.title.contents[0][22:]
 
 # csv_file = "DOE grant long list.csv"
 #

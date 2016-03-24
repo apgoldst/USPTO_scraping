@@ -10,9 +10,10 @@ import time
 # Each grant dictionary contains a key called "patent list", which is itself a list of dictionaries, one per patent
 
 
-def print_grant_table(data):
+def print_grant_table(data, csv_file):
 
-    with open("USPTO_scraping - data on DOE grants - " + time.strftime("%d %b %Y") + " .csv", 'wb') as f:
+    with open("USPTO_scraping - grant data - " + csv_file[:-4] + " - " +
+              time.strftime("%d %b %Y") + ".csv", 'wb') as f:
 
         writer = csv.writer(f, delimiter=',')
 
@@ -29,24 +30,17 @@ def print_grant_table(data):
             row = [field[1] for field in dictionary_tuples]
             writer.writerow(row)
 
-        # writer.writerow(["Award Number", "Number of Patents", "Average Number of Claims"])
-        # for row in range(len(data)):
-        #     if 'Avg. Number of Claims' in data[row].keys():
-        #         writer.writerow([data[row]['grant number'], data[row]['number of patents'], data[row]['avg number of claims']])
-        #     else:
-        #         writer.writerow([data[row]['grant number'], data[row]['number of patents']])
 
+def print_patent_table(data, csv_file):
 
-def print_patent_table(data):
-
-    with open("USPTO_scraping - patents citing DOE grants - " + time.strftime("%d %b %Y") + " .csv", 'wb') as f:
+    with open("USPTO_scraping - patent data - " + csv_file[:-4] + " - " +
+              time.strftime("%d %b %Y") + ".csv", 'wb') as f:
 
         writer = csv.writer(f, delimiter=',')
 
         # Write heading for paper data from dictionary keys, excluding "__citing patent list"
         example_grant = []
         for item in data:
-            print item
             example_grant = item["__patent list"]
             if example_grant:
                 break
@@ -70,14 +64,10 @@ def print_patent_table(data):
                 row = [field[1] for field in dictionary_tuples]
                 writer.writerow(row)
 
-                # for patent in grant['patent list']:
-                #     writer.writerow([grant['grant number'], patent['patent number'],
-                #                     patent['patent title'], patent['date'], patent['number of claims']])
 
-
-csv_file = "DOE grant long list.csv"
+csv_file = "DOE grants.csv"
 
 if __name__ == "__main__":
     data = html_parser.process_grants(csv_file)
-    print_patent_table(data)
-    print_grant_table(data)
+    print_patent_table(data, csv_file)
+    print_grant_table(data, csv_file)

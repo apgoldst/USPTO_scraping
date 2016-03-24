@@ -1,12 +1,90 @@
 import save_tables
 import manual_search
+import pprint
 from bs4 import BeautifulSoup
+import os
 
-pat_num = "8408445"
-ref_file_2 = manual_search.ref_search_1(pat_num)
 
-with open(ref_file_2) as e:
-    ref_soup = BeautifulSoup(e, "lxml")
+# filename = "citing patents html/6593374.html"
+filename = "patent pages html/8424617.html"
+print filename
+
+with open(filename) as f:
+    soup = BeautifulSoup(f, "lxml")
+
+description = soup.find("center", string="Description")
+
+step = 0
+num_claims = 0
+final_claim = description.previous_sibling
+while step < 3:
+    final_claim = final_claim.previous_sibling
+    print final_claim
+    try:
+        print final_claim[0:3]
+        list_num = final_claim[0:4].replace(".", "").replace(" ", "")
+        num_claims = int(list_num)
+        print num_claims
+    except ValueError:
+        step += 1
+    except TypeError:
+        step += 1
+    else:
+        step = 3
+
+if num_claims == 0:
+    num_claims = 1
+
+# description = soup.find("center", string="Description")
+#
+# found = 0
+# final_claim = description.previous_sibling
+# while found == 0:
+#     final_claim = final_claim.previous_sibling
+#     print final_claim
+#     try:
+#         list_num = final_claim[0:3].replace(".", "").replace(" ", "")
+#         num_claims = int(list_num)
+#         print num_claims
+#     except ValueError:
+#         pass
+#     except TypeError:
+#         pass
+#     else:
+#         found = 1
+
+
+# directory = "reference search results html"
+#
+# if not os.path.exists(directory):
+#     os.makedirs(directory)
+
+# filename = "grant search results html/DE-SC0011293_1.html"
+#
+# title = soup.find("font", size="+1")
+# print title.string
+# table = soup.find_all('table')[2]
+# print table
+# row = list(table.children)[3]
+# cell = list(row.children)[2]
+# date = list(cell.children)[1].string
+
+
+# print soup.find_all('b')[3]
+# print soup.strong
+# print soup.title.contents[0]
+# if soup.find('strong'):
+#     print "strong"
+#     # Is there only one search result, so the page redirects?
+
+
+
+
+# pat_num = "8408445"
+# ref_file_2 = manual_search.ref_search_1(pat_num)
+#
+# with open(ref_file_2) as e:
+#     ref_soup = BeautifulSoup(e, "lxml")
 
 # query = "8047593_2"
 # filename = "reference search results - full html/" + query + ".html"

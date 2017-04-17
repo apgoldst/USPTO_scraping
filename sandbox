@@ -3,37 +3,52 @@ import manual_search
 import pprint
 from bs4 import BeautifulSoup
 import os
+import datetime
+import time
 
 
-# filename = "citing patents html/6593374.html"
-filename = "patent pages html/8424617.html"
-print filename
+# date1 = datetime.datetime.strptime("April 12, 2011", "%B %d, %Y")
+# print date1
+# date2 = datetime.datetime(2011, 1, 1)
+# print date2
 
-with open(filename) as f:
-    soup = BeautifulSoup(f, "lxml")
+start_time = datetime.datetime.now()
+print start_time
+time.sleep(2)
+end_time = datetime.datetime.now()
+run_time = end_time - start_time
+print run_time
 
-description = soup.find("center", string="Description")
+#
+# current_class_label = soup.find(string="Current International Class: ")
+# classes = current_class_label.parent.parent.next_sibling.next_sibling.contents[0]
+# print classes
 
-step = 0
-num_claims = 0
-final_claim = description.previous_sibling
-while step < 3:
-    final_claim = final_claim.previous_sibling
-    print final_claim
-    try:
-        print final_claim[0:3]
-        list_num = final_claim[0:4].replace(".", "").replace(" ", "")
-        num_claims = int(list_num)
-        print num_claims
-    except ValueError:
-        step += 1
-    except TypeError:
-        step += 1
-    else:
-        step = 3
 
-if num_claims == 0:
-    num_claims = 1
+
+# description = soup.find("center", string="Description")
+# print description
+
+# step = 0
+# num_claims = 0
+# final_claim = description.previous_sibling
+# while step < 3:
+#     final_claim = final_claim.previous_sibling
+#     print final_claim
+#     try:
+#         print final_claim[0:3]
+#         list_num = final_claim[0:4].replace(".", "").replace(" ", "")
+#         num_claims = int(list_num)
+#         print num_claims
+#     except ValueError:
+#         step += 1
+#     except TypeError:
+#         step += 1
+#     else:
+#         step = 3
+#
+# if num_claims == 0:
+#     num_claims = 1
 
 # description = soup.find("center", string="Description")
 #

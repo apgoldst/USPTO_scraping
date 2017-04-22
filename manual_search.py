@@ -9,6 +9,17 @@ import csv
 import time
 import os
 import pprint
+import string
+
+
+def run_search(query, search_unit):
+
+    if search_unit == "grant":
+        filename = govt_search(query)
+    elif search_unit == "assignee":
+        filename = assignee_search(query)
+
+    return [query, filename]
 
 
 def assignee_search(query):
@@ -58,7 +69,7 @@ def assignee_search_next(query, page):
                 "OS": 'AN/"' + query + '"',
                 "RS": 'AN/"' + query + '"',
                 "Page": "Next",
-                "S1": query + ".ASNM.",
+                "S1": '("' + query + '".ASNM.)',
                 "d": "PTXT"}
         r = requests.get("http://patft.uspto.gov/netacgi/nph-Parser", data)
         with open(filename, 'w') as f:
@@ -296,22 +307,8 @@ def ref_search_1(query):
     return filename
 
 
-def run_search(csv_file, search_unit):
-    with open(csv_file, "rb") as f:
-        text = csv.reader(f)
-        queries = [row[0] for row in text]
-        files = []
-        for x in queries:
-            if search_unit == "grant":
-                filename = govt_search(x)
-            elif search_unit == "assignee":
-                filename = assignee_search(x)
-            files.append(filename)
-    return [queries, files]
-
-
 def pn_search(query, type):
-    # Type is "citing" or "primary"-- determines which folder the patent is stored in
+    # Type is "citing" or "primary"-- determines which folder the patent gets saved in
     if type == "primary":
         filename = "patent pages html/" + query + ".html"
         directory = "patent pages html"
@@ -321,6 +318,10 @@ def pn_search(query, type):
 
     if not os.path.exists(directory):
         os.makedirs(directory)
+
+    # resolve error in special case of early patent missing a zero it its number
+    if string.find(query, "PP") != -1 & len(query) == 6:
+        query = string.replace(query, "PP", "PP0")
 
     if not os.path.exists(filename):
         data = {"Sect1": "PTO2",

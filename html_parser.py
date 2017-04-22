@@ -6,202 +6,208 @@ import pprint
 import manual_search
 from bs4 import BeautifulSoup
 from datetime import datetime
+import re
+import gc
 
 
-# Input a list of queries and get out a list of dictionaries containing the
-# patent data
-def process_queries(query_list, search_unit):
-    [queries, files] = manual_search.run_search(query_list, search_unit)
+# Input a query and get out a dictionary containing the
+# patent data, including a list of dictionaries for each patent
+def process_query(query, search_unit):
 
-    data = []
+    [query, filename] = manual_search.run_search(query, search_unit)
 
-    for counter, query in enumerate(queries):
+    print "processing " + query
 
-        print "processing " + query
+    entry = {"Query": query,
+             "Number of Patents": 0,
+             "Avg. Number of Claims": "",
+             "__patent list": []}
 
-        entry = {"Query": query,
-                 "Number of Patents": 0,
-                 "Avg. Number of Claims": "",
-                 "__patent list": []}
+    # Open file with search results for each grant
+    with open(filename) as f:
+        soup = BeautifulSoup(f, "lxml")
 
-        # Open file with search results for each grant
-        filename = files[counter]
-        with open(filename) as f:
-            soup = BeautifulSoup(f, "lxml")
+    patent_list = []
 
-        patent_list = []
+    # If bold text is present, there is more than one patent result in that search
+    # Number of search results printed in bold
+    if soup.strong:
 
-        # If bold text is present, there is more than one patent result in that search
-        # Number of search results printed in bold
-        if soup.strong:
+        num_patents = int(soup.find_all('strong')[2].contents[0])
 
-            num_patents = int(soup.find_all('strong')[2].contents[0])
+        entry["Number of Patents"] = num_patents
 
-            entry["Number of Patents"] = num_patents
+        up_to_50 = min(50, num_patents)
 
-            up_to_50 = min(50, num_patents)
+        patent_list = interpret_search(soup, up_to_50, "primary")
 
-            patent_list = interpret_search(soup, up_to_50, "primary")
+        # Is there a second page of results past the first 50?
+        if num_patents > 50:
 
-            # Is there a second page of results past the first 50?
-            if num_patents > 50:
+            # record number of pages (using negative values so that it rounds up to the next integer)
+            max_page = -(-num_patents // 50)
 
-                # record number of pages (using negative values so that it rounds up to the next integer)
-                max_page = -(-num_patents // 50)
+            for page in range(2, max_page + 1):
+                search_file_past_1 = manual_search.multiple_page_search(query, search_unit, page)
 
-                for page in range(2, max_page + 1):
-                    search_file_past_1 = manual_search.multiple_page_search(query, search_unit, page)
+                with open(search_file_past_1) as h:
+                    soup = BeautifulSoup(h, "lxml")
 
-                    with open(search_file_past_1) as h:
-                        soup = BeautifulSoup(h, "lxml")
+                if page == max_page:
+                    num_on_page = num_patents % 50
+                else:
+                    num_on_page = 50
 
-                    num_on_page = num_patents - (50 * (page - 1))
+                patent_list += interpret_search(soup, num_on_page, "primary")
 
-                    patent_list += interpret_search(soup, num_on_page, "primary")
+    # If there is only one search result, there is a redirect page
+    # Search needs to be repeated
+    if soup.title.contents[0] == "Single Document":
+        num_patents = 1
+        entry["Number of Patents"] = num_patents
 
-        # If there is only one search result, there is a redirect page
-        # Search needs to be repeated
-        if soup.title.contents[0] == "Single Document":
-            num_patents = 1
-            entry["Number of Patents"] = num_patents
+        # Repeat search to save actual patent instead of redirect page
+        print "query with single result: " + query + ", search unit: " + search_unit
+        search_file_1 = manual_search.single_result_search(query, search_unit)
 
-            print "query: " + query + ", search unit: " + search_unit
-            search_file_1 = manual_search.single_result_search(query, search_unit)
+        with open(search_file_1) as g:
+            soup = BeautifulSoup(g, "lxml")
 
-            with open(search_file_1) as g:
-                soup = BeautifulSoup(g, "lxml")
+        title = soup.find("font", size="+1").string.replace("\n", "").replace("    ", "")
+        number = soup.title.contents[0][22:]
 
-            title = soup.find("font", size="+1").string.replace("\n", "").replace("    ", "")
-            number = soup.title.contents[0][22:]
+        # Search on the patent number to save a patent page with the expected formatting
+        single_pat_file = manual_search.pn_search(str(number), "primary")
 
-            [assignee, date, num_claims, intl_classes, cpc_classes] = get_patent_details(soup)
+        with open(single_pat_file) as g:
+            soup = BeautifulSoup(g, "lxml")
 
-            single_pat = {"Patent Title": title,
-                          "Patent Number": number,
-                          "Date": datetime.strptime(date, '%B %d, %Y'),
-                          "Year": datetime.strptime(date, '%B %d, %Y').year,
-                          "Number of Claims": num_claims,
-                          "Intl Classes": intl_classes,
-                          "CPC Classes": cpc_classes}
+        # Create dictionary of patent attributes
+        single_pat = get_patent_details(soup)
 
-            # print "date " + single_pat["Date"]
-            # print "year " + str(single_pat["Year"])
+        # Add title and patent number to dictionary
+        single_pat["Patent Number"] = number
+        single_pat["Patent Title"] = title
 
-            patent_list.append(single_pat)
+        patent_list.append(single_pat)
 
-        # For each search, set the value of the "patent list" key
-        # as a list of patent dictionaries
-        entry["__patent list"] = patent_list
+    # For each search, set the value of the "patent list" key
+    # as a list of patent dictionaries
+    entry["__patent list"] = patent_list
 
-        if patent_list:
+    if patent_list:
 
-            for patent in patent_list:
+        for patent in patent_list:
 
-                pat_num = patent["Patent Number"]
+            pat_num = patent["Patent Number"]
 
-                patent["Citing Patents through Oct. 1, 2016"] = 0
+            patent["Citing Patents through April 1, 2017"] = 0
+            citing_patent_list = []
+
+            print "search for patents citing " + pat_num
+            # search for patents that cite the original patent
+            ref_file = manual_search.ref_search(pat_num)
+
+            with open(ref_file) as d:
+                ref_soup = BeautifulSoup(d, "lxml")
+
+            # Read search results page for citing patents
+            # Number of search results printed in bold
+            if ref_soup.strong:
+
+                num_citing_patents = int(ref_soup.find_all('strong')[2].contents[0])
+
+                up_to_50 = min(50, num_citing_patents)
+
+                citing_patent_list = interpret_search(ref_soup, up_to_50, "citing")
+                citing_patents_in_search_period = [x for x in citing_patent_list if x["Issued Date"] < datetime(2017, 4, 1)]
+                patent["Citing Patents through April 1, 2017"] += len(citing_patents_in_search_period)
+
+                # clearing memory after each page of citing patents
                 citing_patent_list = []
+                citing_patents_in_search_period = []
+                gc.collect()
 
-                print "search for patents citing " + pat_num
-                # search for patents that cite the original patent
-                ref_file = manual_search.ref_search(pat_num)
+                # Is there a second page of results past the first 50?
+                if num_citing_patents > 50:
 
-                with open(ref_file) as d:
-                    ref_soup = BeautifulSoup(d, "lxml")
+                    # number of pages (using negative values so that it rounds up to the next integer)
+                    max_page = -(-num_citing_patents // 50)
 
-                # Are there multiple results for "referenced by"?
-                if ref_soup.strong:
+                    for page in range(2, max_page + 1):
+                        ref_file_past_1 = manual_search.ref_search_next(pat_num, page)
 
-                    num_citing_patents = int(ref_soup.find_all('strong')[2].contents[0])
+                        with open(ref_file_past_1) as h:
+                            ref_soup = BeautifulSoup(h, "lxml")
 
-                    up_to_50 = min(50, num_citing_patents)
+                        if page == max_page:
+                            num_on_page = num_citing_patents - (50 * (page - 1))
+                            print str(num_on_page) + " on page " + str(page)
+                        else:
+                            num_on_page = 50
 
-                    citing_patent_list = interpret_search(ref_soup, up_to_50, "citing")
+                        citing_patent_list = interpret_search(ref_soup, num_on_page, "citing")
+                        citing_patents_in_search_period = [x for x in citing_patent_list if x["Issued Date"] < datetime(2017, 4, 1)]
+                        patent["Citing Patents through April 1, 2017"] += len(citing_patents_in_search_period)
 
-                    # Is there a second page of results past the first 50?
-                    if num_citing_patents > 50:
+                        # clearing memory after each page of citing patents
+                        citing_patent_list = []
+                        citing_patents_in_search_period = []
+                        gc.collect()
 
-                        # number of pages (using negative values so that it rounds up to the next integer)
-                        max_page = -(-num_citing_patents // 50)
+            # Is there only one search result, so the page redirects?
+            if ref_soup.title.contents[0] == "Single Document":
+                ref_file_1 = manual_search.ref_search_1(pat_num)
 
-                        for page in range(2, max_page + 1):
-                            ref_file_past_1 = manual_search.ref_search_next(pat_num, page)
+                with open(ref_file_1) as e:
+                    ref_soup = BeautifulSoup(e, "lxml")
 
-                            with open(ref_file_past_1) as h:
-                                ref_soup = BeautifulSoup(h, "lxml")
+                # citing_pat_num = ref_soup.find("font", size="+1").string.replace("\n", "").replace("    ", "")
+                # citing_pat_title = ref_soup.title.contents[0][22:]
 
-                            if page == max_page:
-                                num_on_page = num_citing_patents - (50 * (page - 1))
-                                print str(num_on_page) + " on page " + str(page)
-                            else:
-                                num_on_page = 50
+                # Create dictionary of patent attributes
+                citing_pat = get_patent_details(ref_soup)
 
-                            citing_patent_list += interpret_search(ref_soup, num_on_page, "citing")
+                # # Add title and patent number to dictionary
+                # citing_pat["Patent Number"] = citing_pat_num
+                # citing_pat["Patent Title"] = citing_pat_title
 
-                # Is there only one search result, so the page redirects?
-                if ref_soup.title.contents[0] == "Single Document":
-                    ref_file_1 = manual_search.ref_search_1(pat_num)
+                if citing_pat["Issued Date"] < datetime(2017, 4, 1):
+                    patent["Citing Patents through April 1, 2017"] = 1
 
-                    with open(ref_file_1) as e:
-                        ref_soup = BeautifulSoup(e, "lxml")
+            citing_patent_list = []
+            gc.collect()
 
-                    title = ref_soup.find("font", size="+1").string.replace("\n", "").replace("    ", "")
-                    number = ref_soup.title.contents[0][22:]
+            # Commented out until I can resolve possible issues with finding the date value
 
-                    [assignee, date, num_claims, intl_classes, cpc_classes] = get_patent_details(ref_soup)
+            # if citing_patent_list:
+            #
+            #     # calculate annual citations for each patent
+            #     for year in range(4):
+            #
+            #         date_format = "%B %d, %Y"
+            #         key = "Citing patents in month %s to %s" % (str((year-1)*12), str(year*12))
+            #
+            #         patent[key] = 0
+            #         citations = []
+            #
+            #         for item in patent["__citing patent list"]:
+            #
+            #             print "checking time difference for citing patent " + item["Patent Number"]
+            #
+            #             delta = datetime.strptime(item["Date"], date_format) - datetime.strptime(patent["Date"], date_format)
+            #             item["Cite Time"] = delta.days / float(365)
+            #             if year-1 < item["Cite Time"] <= year:
+            #                 citations.append(item["Date"])
+            #
+            #         if citations:
+            #             patent[key] = len(citations)
 
-                    citing_pat = {"Patent Title": title,
-                                  "Patent Number": number,
-                                  "Date": datetime.strptime(date, '%B %d, %Y'),
-                                  "Year": datetime.strptime(date, '%B %d, %Y').year,
-                                  "Number of Claims": num_claims,
-                                  "Intl Classes": intl_classes,
-                                  "CPC Classes": cpc_classes}
-
-                    # print "date " + citing_pat["Date"]
-                    # print "year " + str(citing_pat["Year"])
-
-                    citing_patent_list.append(citing_pat)
-
-                patent["__citing patent list"] = citing_patent_list
-
-                citing_patents_in_search = [x for x in citing_patent_list if x["Date"] < datetime(2017, 4, 1)]
-
-                patent["Citing Patents through April 1, 2017"] = len(citing_patents_in_search)
-
-                # Commented out until I can resolve possible issues with finding the date value
-
-                # if citing_patent_list:
-                #
-                #     # calculate annual citations for each patent
-                #     for year in range(4):
-                #
-                #         date_format = "%B %d, %Y"
-                #         key = "Citing patents in month %s to %s" % (str((year-1)*12), str(year*12))
-                #
-                #         patent[key] = 0
-                #         citations = []
-                #
-                #         for item in patent["__citing patent list"]:
-                #
-                #             print "checking time difference for citing patent " + item["Patent Number"]
-                #
-                #             delta = datetime.strptime(item["Date"], date_format) - datetime.strptime(patent["Date"], date_format)
-                #             item["Cite Time"] = delta.days / float(365)
-                #             if year-1 < item["Cite Time"] <= year:
-                #                 citations.append(item["Date"])
-                #
-                #         if citations:
-                #             patent[key] = len(citations)
-
-            # calculate average number of claims for patents in each grant
-            total_claims = sum(x["Number of Claims"] for x in entry["__patent list"])
-            avg_claims = total_claims / float(num_patents)
-            entry["Avg. Number of Claims"] = avg_claims
-
-        data.append(entry)
-
-    return data
+        # # calculate average number of claims for patents in each grant
+        # total_claims = sum(x["Number of Claims"] for x in entry["__patent list"])
+        # avg_claims = total_claims / float(num_patents)
+        # entry["Avg. Number of Claims"] = avg_claims
+    return entry
 
 
 def interpret_search(soup, num_patents, type):
@@ -232,20 +238,12 @@ def interpret_search(soup, num_patents, type):
         with open(pat_file) as c:
             pat_soup = BeautifulSoup(c, "lxml")
 
-        [assignee, date, num_claims, intl_classes, cpc_classes] = get_patent_details(pat_soup)
+        # Create dictionary of patent attributes
+        patent = get_patent_details(pat_soup)
 
-        # Create patent dictionary
-        patent = {"Patent Number": pat_num,
-                  "Patent Title": pat_title,
-                  "Assignee": assignee,
-                  "Date": datetime.strptime(date, '%B %d, %Y'),
-                  "Year": datetime.strptime(date, '%B %d, %Y').year,
-                  "Number of Claims": num_claims,
-                  "Intl Classes": intl_classes,
-                  "CPC Classes": cpc_classes}
-
-        # print "date " + patent["Date"]
-        # print "year " + str(patent["Year"])
+        # Add title and patent number to dictionary
+        patent["Patent Number"] = pat_num
+        patent["Patent Title"] = pat_title
 
         patent_list.append(patent)
 
@@ -254,19 +252,35 @@ def interpret_search(soup, num_patents, type):
 
 def get_patent_details(soup):
 
-    # Get patent assignee (if there is one)
+    # Get first patent assignee
     assignee_label = soup.find(string="Assignee:")
     try:
         assignee = assignee_label.parent.next_sibling.next_sibling.contents[1].contents[0]
     except:
         assignee = []
+    print "Assignee: " + str(assignee)
 
-    # Get patent date from a header table
+    # Get additional patent assignee (if there is one)
+    try:
+        assignee_2 = assignee_label.parent.parent.contents[3].find("br").next_element.next_element.contents[0]
+    except:
+        assignee_2 = []
+
+    # Get patent application filing date
+    filed_label = soup.find(string=re.compile("Filed:"))
+    try:
+        filed = filed_label.parent.next_sibling.contents[1].contents[0]
+    except:
+        filed = []
+    print "Filed: " + str(filed)
+
+    # Get patent issue date from a header table
     table = soup.find_all('table')[2]
     row = list(table.children)[3]
     cell = list(row.children)[2]
     date = list(cell.children)[1].string
     date = str(date).replace("\n", "").replace("*", "").strip()
+    print date
 
     # Get number of claims
     description = soup.find("center", string="Description")
@@ -286,20 +300,36 @@ def get_patent_details(soup):
             step = 3
     if num_claims == 0:
         num_claims = 1
+    # print str(num_claims) + " claims"
 
-    # Get list of CPC classes
+    # Get lists of patent classes
     intl_class_label = soup.find(string="Current International Class: ")
-    intl_classes = intl_class_label.parent.parent.next_sibling.next_sibling.contents[0]
+    try:
+        intl_classes = intl_class_label.parent.parent.next_sibling.next_sibling.contents[0]
+    except:
+        intl_classes = []
+
     cpc_class_label = soup.find(string="Current CPC Class: ")
     try:
         cpc_classes = cpc_class_label.parent.parent.next_sibling.next_sibling.contents[0]
     except:
         cpc_classes = []
 
-    return [assignee, date, num_claims, intl_classes, cpc_classes]
+    pat = {"Assignee 1": assignee,
+           "Assignee 2": assignee_2,
+           "Issued Date": datetime.strptime(date, '%B %d, %Y'),
+           "Issued Year": datetime.strptime(date, '%B %d, %Y').year,
+           "Filed Date": datetime.strptime(filed, '%B %d, %Y'),
+           "Filed Year": datetime.strptime(filed, '%B %d, %Y').year,
+           "Number of Claims": num_claims,
+           "Intl Classes": intl_classes,
+           "CPC Classes": cpc_classes}
+
+    return pat
 
 
 csv_file = "test assignees.csv"
 
 if __name__ == '__main__':
-    process_queries(csv_file, "assignee")
+    entry = process_query("ASPEN AEROGELS", "assignee")
+    print entry

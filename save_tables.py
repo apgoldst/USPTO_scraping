@@ -1,4 +1,6 @@
 # Author: Anna Goldstein
+# This script inputs a list of either grant numbers or company names
+# and outputs a table of all patents with basic info and citing patent counts
 
 import html_parser
 import pprint
@@ -124,7 +126,7 @@ def print_patent_table_from_assignees(csv_file):
         gc.collect()
 
 # csv_file = "test assignees.csv"
-csv_file = "companies founded 2005-2010 - resume at Uber.csv"
+csv_file = "companies founded 2005-2010.csv"
 
 if __name__ == "__main__":
     start_time = datetime.datetime.now()

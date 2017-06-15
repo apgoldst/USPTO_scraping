@@ -1,7 +1,7 @@
 # Author: Anna Goldstein
-# This is a script that takes a CSV list of grant numbers and searches
-# the USPTO database for patents that cite each one. The search results
-# page is saved as an HTML file.
+# This script searches the USPTO database for
+# patents that cite particular grant numbers or company names.
+# The search results page is saved as an HTML file.
 
 
 import requests

@@ -1,6 +1,6 @@
 # Author: Anna Goldstein
-# This script takes in a CSV file of grant numbers and returns a data structure with
-# patenting metrics for the grant and basic info for each patent.
+# This script takes in grant numbers or company names and returns a data structure with
+# patenting metrics for the search term and basic info for each patent.
 
 import pprint
 import manual_search
@@ -260,11 +260,15 @@ def get_patent_details(soup):
         assignee = []
     print "Assignee: " + str(assignee)
 
-    # Get additional patent assignee (if there is one)
+    # Get additional patent assignees (if there are more)
     try:
         assignee_2 = assignee_label.parent.parent.contents[3].find("br").next_element.next_element.contents[0]
     except:
         assignee_2 = []
+    try:
+        assignee_3 = assignee_label.parent.parent.contents[3].find_all("br")[1].next_element.next_element.contents[0]
+    except:
+        assignee_3 = []
 
     # Get patent application filing date
     filed_label = soup.find(string=re.compile("Filed:"))
@@ -305,7 +309,7 @@ def get_patent_details(soup):
     # Get lists of patent classes
     intl_class_label = soup.find(string="Current International Class: ")
     try:
-        intl_classes = intl_class_label.parent.parent.next_sibling.next_sibling.contents[0]
+        intl_classes = intl_class_label.parent.parent.next_sibling.next_sibling.contents[0].string.replace("\n", "")
     except:
         intl_classes = []
 
@@ -317,6 +321,7 @@ def get_patent_details(soup):
 
     pat = {"Assignee 1": assignee,
            "Assignee 2": assignee_2,
+           "Assignee 3": assignee_3,
            "Issued Date": datetime.strptime(date, '%B %d, %Y'),
            "Issued Year": datetime.strptime(date, '%B %d, %Y').year,
            "Filed Date": datetime.strptime(filed, '%B %d, %Y'),
@@ -331,5 +336,7 @@ def get_patent_details(soup):
 csv_file = "test assignees.csv"
 
 if __name__ == '__main__':
-    entry = process_query("ASPEN AEROGELS", "assignee")
-    print entry
+    entry = process_query("ALPHAMED", "assignee")
+    for x in entry["__patent list"]:
+        if x["Assignee 3"] != []:
+            print x["Assignee 3"] + " is Assignee #3"
